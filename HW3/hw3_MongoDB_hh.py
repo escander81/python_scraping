@@ -73,4 +73,3 @@ for i in range(last_page):
     response = requests.get(main_url + '/search/vacancy', params=params, headers=headers)
     # print(len(all_vacancies))
 pprint(all_vacancies)
-
