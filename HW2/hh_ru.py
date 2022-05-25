@@ -1,39 +1,76 @@
-from pprint import pprint
-import requests
 from bs4 import BeautifulSoup as bs
-import csv
+import requests
+from pprint import pprint
 
 main_url = 'https://hh.ru'
+vacancy = 'Python Developer'
+page = 0
+all_vacancies = []
+params = {'text': vacancy,
+          'area': 78,
+          'experience': 'doesNotMatter',
+          'order_by': 'relevance',
+          'search_period': 0,
+          'items_on_page': 20,
+          'page': page}
+headers = {'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                         'AppleWebKit/537.36 (KHTML, like Gecko)'
+                         'Chrome/98.0.4758.141 YaBrowser/22.3.4.731 Yowser/2.5 Safari/537.36'}
+response = requests.get(main_url + '/search/vacancy', params=params, headers=headers)
+soup = bs(response.text, 'html.parser')
 
-params = {'area': '78',
-          'text': 'Python developer'}
-headers = {'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) '
-                         'AppleWebKit/537.36 (KHTML, like Gecko) '
-                         'Chrome/94.0.4606.71 Safari/537.36 OPR/80.0.4170.40'}
+try:
+    last_page = int(soup.find_all('a',{'data-qa':'pager-page'})[-1].text)
+except:
+    last_page = 1
 
-response = requests.get(main_url+'/search/vacancy', params=params, headers=headers).text
+for i in range(last_page):
 
-html = ''
-with open('page.html', 'r') as f:
-    html = f.read()
+    soup = bs(response.text, 'html.parser')
 
-soup = bs(html, 'html.parser')
+    vacancies = soup.find_all('div', {'class': 'vacancy-serp-item'})
 
+    for vacancy in vacancies:
 
-for vac_anchor in soup.find_all('div', class_='vacancy-serp-item'):
+        vacancy_info = {}
+        vacancy_anchor = vacancy.find('a', {'data-qa': "vacancy-serp__vacancy-title"})
+        vacancy_name = vacancy_anchor.getText()
+        vacancy_info['name'] = vacancy_name
 
+        vacancy_link = vacancy_anchor['href']
+        vacancy_info['link'] = vacancy_link
+        vacancy_info['site'] = main_url + '/'
+        vacancy_salary = vacancy.find('span', {'data-qa': "vacancy-serp__vacancy-compensation"})
 
-    vac_title = vac_anchor.a.getText()
-    vac_link = vac_anchor.a['href']
-    # vac_info = vac_anchor.nextSibling
-    vac_salary = vac_anchor.find('span', class_='bloko-header-section-3')
-    vac_salary_sum = str(vac_salary).strip()\
-        .replace('<span class="bloko-header-section-3" data-qa="vacancy-serp__vacancy-compensation">','')\
-        .replace('<!-- --> <!-- -->', ' ')\
-        .replace('</span>', '.')\
-        .replace('<!-- -->', '')\
-        .replace('..', '.')
+        if vacancy_salary is None:
+            min_salary = None
+            max_salary = None
+            currency = None
+        else:
+            vacancy_salary = vacancy_salary.getText()
+            if vacancy_salary.startswith('до'):
+                max_salary = int("".join([s for s in vacancy_salary.split() if s.isdigit()]))
+                min_salary = None
+                currency = vacancy_salary.split()[-1]
 
+            elif vacancy_salary.startswith('от'):
+                max_salary = None
+                min_salary = int("".join([s for s in vacancy_salary.split() if s.isdigit()]))
+                currency = vacancy_salary.split()[-1]
 
+            else:
+                max_salary = int("".join([s for s in vacancy_salary.split('–')[1] if s.isdigit()]))
+                min_salary = int("".join([s for s in vacancy_salary.split('–')[0] if s.isdigit()]))
+                currency = vacancy_salary.split()[-1]
 
-    print(vac_title, vac_salary_sum, vac_link)
+        vacancy_info['max_salary'] = max_salary
+        vacancy_info['min_salary'] = min_salary
+        vacancy_info['currency'] = currency
+
+        all_vacancies.append(vacancy_info)
+
+    params['page'] += + 1
+    response = requests.get(main_url + '/search/vacancy', params=params, headers=headers)
+    # print(len(all_vacancies))
+pprint(all_vacancies)
+
