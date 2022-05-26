@@ -35,5 +35,4 @@ for vac_anchor in soup.find_all('div', class_='vacancy-serp-item'):
         .replace('..', '.')
 
 
-
     print(vac_title, vac_salary_sum, vac_link)
