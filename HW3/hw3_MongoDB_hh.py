@@ -1,76 +1,125 @@
-from bs4 import BeautifulSoup as bs
-import requests
+from pymongo import MongoClient
+import requests as rq
+from bs4 import BeautifulSoup
 from pprint import pprint
 
-main_url = 'https://hh.ru'
-vacancy = 'Python Developer'
-page = 0
-all_vacancies = []
-params = {'text': vacancy,
-          'area': 78,
-          'experience': 'doesNotMatter',
-          'order_by': 'relevance',
-          'search_period': 0,
-          'items_on_page': 20,
-          'page': page}
-headers = {'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-                         'AppleWebKit/537.36 (KHTML, like Gecko)'
-                         'Chrome/98.0.4758.141 YaBrowser/22.3.4.731 Yowser/2.5 Safari/537.36'}
-response = requests.get(main_url + '/search/vacancy', params=params, headers=headers)
-soup = bs(response.text, 'html.parser')
+
+def zp_check(value):
+    z_min = None
+    z_max = None
+    ue = None
+
+    try:
+        value = value.getText().replace('\u202f', '').split()
+        if value[0] == 'от':
+            z_min = float(value[1])
+            ue = value[2]
+        elif value[0] == 'до':
+            z_max = float(value[1])
+            ue = value[2]
+        else:
+            z_min = float(value[0])
+            z_max = float(value[2])
+            ue = value[3]
+
+    finally:
+
+        return z_min, z_max, ue
+
+
+def check_vacancy(mongo_d, va_date):
+    """
+    Функция проверяет наличие вакансии в БД,
+    что бы исключить повтор записей.
+    """
+
+    dat_b = mongo_d['headhunter']
+    hh = dat_b.headhunter
+
+    if bool(hh.find_one({'$and': [{'1_Name': va_date['1_Name']}, {'5_Link': va_date['5_Link']}]})):
+        return True
+
+    return False
+
+
+def mongo_index(mongo_d):
+    """
+    Поиск последний созданый индекс в базе данных Index
+    и добавление вновь созданного
+    """
+    max_index = 0
+    dat_bas = mongo_d['index']
+
+    for elem in dat_bas.index.find():
+        if elem['index'] > max_index:
+            max_index = elem['index']
+
+    dat_bas.index.insert_one({'index': max_index + 1})
+
+    return max_index + 1
+
+
+def find_vac(mongo_d, value):
+    """
+    Поиск вакансий с ЗП выше требуемой (value)
+    """
+    temp = mongo_d.find({'$or': [
+        {'2_Min_ZP': {'$gte': value}},
+        {'3_Max_ZP': {'$gte': value}}
+    ]})
+
+    return temp
+
+
+client = MongoClient('127.0.0.1', 27017)
+db = client['headhunter']
+db_vacancy = db.headhunter
+
+headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.71 Safari/537.36 OPR/80.0.4170.40'}
+url = "https://hh.ru"
+params = {'text': None,
+          'area': 113, 'search_field': 'description', 'page': 0}
+
+i = 0
+
+params['text'] = input('Введите название проффессии: ')
+
+response = rq.get(url + '/search/vacancy/', params=params, headers=headers)
+dom = BeautifulSoup(response.text, 'html.parser')
+
+db_vacancy.delete_many({})  # Предварительная чистка БД hh для обучения
+client['index'].index.delete_many({})  # Предварительная чистка БД index для обучения
 
 try:
-    last_page = int(soup.find_all('a',{'data-qa':'pager-page'})[-1].text)
+    page = int(dom.find_all('span', {'class': 'pager-item-not-in-short-range'})[-1].getText())
 except:
-    last_page = 1
+    page = 1
 
-for i in range(last_page):
+while i < page:
 
-    soup = bs(response.text, 'html.parser')
+    vacansies = dom.find_all('div', {'class': 'vacancy-serp-item'})
 
-    vacancies = soup.find_all('div', {'class': 'vacancy-serp-item'})
+    for vacansy in vacansies:
+        vac_dict = dict()
 
-    for vacancy in vacancies:
+        name = vacansy.find('a').getText()
+        link = vacansy.find('a')['href']
+        zp = vacansy.find('div', {'class': 'vacancy-serp-item__sidebar'})
 
-        vacancy_info = {}
-        vacancy_anchor = vacancy.find('a', {'data-qa': "vacancy-serp__vacancy-title"})
-        vacancy_name = vacancy_anchor.getText()
-        vacancy_info['name'] = vacancy_name
+        vac_dict['_id'] = mongo_index(client)
+        vac_dict['1_Name'] = name
+        vac_dict['2_Min_ZP'], vac_dict['3_Max_ZP'], vac_dict['4_UE'] = zp_check(zp)
+        vac_dict['5_Link'] = link[:link.index('?')]
 
-        vacancy_link = vacancy_anchor['href']
-        vacancy_info['link'] = vacancy_link
-        vacancy_info['site'] = main_url + '/'
-        vacancy_salary = vacancy.find('span', {'data-qa': "vacancy-serp__vacancy-compensation"})
+        if check_vacancy(client, vac_dict) is False:
+            db_vacancy.insert_one(vac_dict)
 
-        if vacancy_salary is None:
-            min_salary = None
-            max_salary = None
-            currency = None
-        else:
-            vacancy_salary = vacancy_salary.getText()
-            if vacancy_salary.startswith('до'):
-                max_salary = int("".join([s for s in vacancy_salary.split() if s.isdigit()]))
-                min_salary = None
-                currency = vacancy_salary.split()[-1]
+    i += 1
+    params['page'] = i
+    response = rq.get(url + '/search/vacancy/', params=params, headers=headers)
+    dom = BeautifulSoup(response.text, 'html.parser')
 
-            elif vacancy_salary.startswith('от'):
-                max_salary = None
-                min_salary = int("".join([s for s in vacancy_salary.split() if s.isdigit()]))
-                currency = vacancy_salary.split()[-1]
+z_p = float(input('Введите желаемую ЗП: '))
 
-            else:
-                max_salary = int("".join([s for s in vacancy_salary.split('–')[1] if s.isdigit()]))
-                min_salary = int("".join([s for s in vacancy_salary.split('–')[0] if s.isdigit()]))
-                currency = vacancy_salary.split()[-1]
-
-        vacancy_info['max_salary'] = max_salary
-        vacancy_info['min_salary'] = min_salary
-        vacancy_info['currency'] = currency
-
-        all_vacancies.append(vacancy_info)
-
-    params['page'] += + 1
-    response = requests.get(main_url + '/search/vacancy', params=params, headers=headers)
-    # print(len(all_vacancies))
-pprint(all_vacancies)
-
+for item in find_vac(db_vacancy, z_p):
+    pprint(item)
