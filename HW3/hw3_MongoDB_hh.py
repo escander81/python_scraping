@@ -123,3 +123,4 @@ z_p = float(input('Введите желаемую ЗП: '))
 
 for item in find_vac(db_vacancy, z_p):
     pprint(item)
+    
