@@ -47,3 +47,4 @@ for i in range(10):
 
 for d_mongo in d_news.find({}):
     pprint(d_mongo)
+    
