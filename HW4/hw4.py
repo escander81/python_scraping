@@ -26,7 +26,9 @@ db = client['news']
 d_news = db.news
 d_news.delete_many({})
 
-header = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.71 Safari/537.36 OPR/80.0.4170.40'}
+header = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) '
+                        'AppleWebKit/537.36 (KHTML, like Gecko) '
+                        'Chrome/94.0.4606.71 Safari/537.36 OPR/80.0.4170.40'}
 url = 'https://lenta.ru'
 dom = get_html(url)
 
