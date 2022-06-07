@@ -106,3 +106,4 @@ for el in mem:
 
 for letter in mail.find({}):
     pprint(letter)
+    
